@@ -11,33 +11,38 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ✅ MySQL Connection
+// ✅ Create DB connection (NO connect yet)
 const db = mysql.createConnection({
-    host: process.env.DB_HOST,
+    host: process.env.DB_HOST,   // should be: db (docker service name)
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME
 });
 
-// ✅ Connect to DB
-db.connect((err) => {
-    if (err) {
-        console.error("DB connection failed ❌:", err.message);
-    } else {
-        console.log("MySQL Connected ✅");
-    }
-});
+
+// ✅ Retry connection function (IMPORTANT)
+function connectDB() {
+    db.connect((err) => {
+        if (err) {
+            console.error("DB not ready, retrying in 5 sec... ❌", err.message);
+
+            setTimeout(connectDB, 5000); // retry after 5 sec
+        } else {
+            console.log("MySQL Connected ✅");
+        }
+    });
+}
+
+// ✅ Call the function
+connectDB();
 
 // ✅ Test route
 app.get("/", (req, res) => {
     res.send("Task Manager API is running 🚀");
 });
 
-
 // ✅ Add Task
 app.post("/tasks", (req, res) => {
-    console.log("BODY RECEIVED:", req.body);  // 👈 add this
-
     const { title } = req.body;
 
     if (!title) {
@@ -48,7 +53,10 @@ app.post("/tasks", (req, res) => {
         "INSERT INTO tasks (title) VALUES (?)",
         [title],
         (err, result) => {
-            if (err) return res.status(500).send(err);
+            if (err) {
+                console.error(err);
+                return res.status(500).json({ error: "Database error" });
+            }
 
             res.json({ id: result.insertId, title });
         }
@@ -67,12 +75,9 @@ app.get("/tasks", (req, res) => {
     });
 });
 
-
 // ✅ Delete Task
 app.delete("/tasks/:id", (req, res) => {
-    const query = "DELETE FROM tasks WHERE id = ?";
-
-    db.query(query, [req.params.id], (err, result) => {
+    db.query("DELETE FROM tasks WHERE id = ?", [req.params.id], (err) => {
         if (err) {
             console.error(err);
             return res.status(500).json({ error: "Database error" });
@@ -82,10 +87,10 @@ app.delete("/tasks/:id", (req, res) => {
     });
 });
 
-
 // ✅ Start Server
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+
